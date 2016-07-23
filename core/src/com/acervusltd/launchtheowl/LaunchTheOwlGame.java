@@ -4,10 +4,13 @@ import com.badlogic.gdx.ApplicationAdapter;
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.audio.Music;
 import com.badlogic.gdx.audio.Sound;
+import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.OrthographicCamera;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.Animation;
+import com.badlogic.gdx.graphics.g2d.BitmapFont;
+import com.badlogic.gdx.graphics.g2d.PixmapPacker;
 import com.badlogic.gdx.graphics.g2d.Sprite;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
@@ -20,13 +23,16 @@ public class LaunchTheOwlGame extends ApplicationAdapter {
 	private Group group;
 	public static final float SCREEN_WIDTH = 800;
 	public static final float SCREEN_HEIGHT = 480;
+	public static final float OWL_LAND_DELAY = 0.25f;
+	public static final float MAX_SPRITE_HALF_WIDTH = 40;
 	private SpriteBatch batch;
 
 	// Owl stuff
 	private Texture owlImage;
 	private Sprite owlSprite;
 	private Rectangle owl;
-	private boolean inFlight;
+	private OwlState owlState;
+	private float landTime;
 
 	// Nest stuff
 	private Texture nestImage;
@@ -37,8 +43,8 @@ public class LaunchTheOwlGame extends ApplicationAdapter {
 
 	// Coin animation
 	private Rectangle coin;
-	private static final int        FRAME_COLS = 4;
-	private static final int        FRAME_ROWS = 1;
+	private static final int FRAME_COLS = 4;
+	private static final int FRAME_ROWS = 1;
 	private Animation coinAnimation;
 	private Texture coinSheet;
 	private TextureRegion[] coinFrames;
@@ -50,6 +56,14 @@ public class LaunchTheOwlGame extends ApplicationAdapter {
 	// Coin sound
 	private Sound coinSound;
 
+	//Score
+	private Integer score;
+	private BitmapFont scoreText;
+
+	private enum OwlState {
+		NOT_FLOWN, FLYING, LANDED
+	}
+
 	@Override
 	public void create () {
 		batch = new SpriteBatch();
@@ -60,7 +74,6 @@ public class LaunchTheOwlGame extends ApplicationAdapter {
 		owlImage = new Texture("owl.png");
 		owlSprite = new Sprite(owlImage);
 		owlSprite.rotate(45);
-		inFlight = false;
 
 		nestImage = new Texture("nest.png");
 
@@ -94,18 +107,24 @@ public class LaunchTheOwlGame extends ApplicationAdapter {
 		coinAnimation = new Animation(0.1f, coinFrames);
 		stateTime = 0f;
 
+		// Initialize score
+		score = 0;
+		scoreText = new BitmapFont();
+		scoreText.setColor(Color.CHARTREUSE);
+
 		resetActors();
 	}
 
 	private void resetActors() {
+		owlState = OwlState.NOT_FLOWN;
 		float initialY = (float) Math.random()*SCREEN_HEIGHT;
 		// Do not clip sprites at bottom
-		if (initialY < 40) {
-			initialY = 40;
+		if (initialY < MAX_SPRITE_HALF_WIDTH) {
+			initialY = MAX_SPRITE_HALF_WIDTH;
 		}
 		// Do not clip sprites at top
-		else if (initialY > SCREEN_HEIGHT - 40) {
-			initialY = SCREEN_HEIGHT - 40;
+		else if (initialY > SCREEN_HEIGHT - MAX_SPRITE_HALF_WIDTH) {
+			initialY = SCREEN_HEIGHT - MAX_SPRITE_HALF_WIDTH;
 		}
 
 		owl.setX(SCREEN_WIDTH/4 - owlSprite.getWidth()/2);
@@ -128,26 +147,42 @@ public class LaunchTheOwlGame extends ApplicationAdapter {
 		currentFrame = coinAnimation.getKeyFrame(stateTime, true);
 
 		batch.setProjectionMatrix(camera.combined);
+
+		// Begin the draw batch.  Order determines the z-order, so it's basically all stacked.
 		batch.begin();
-		batch.draw(owlSprite, owl.getX(), owl.getY());
 		batch.draw(nestImage, nest.getX(), nest.getY());
 		if (coin != null) {
 			batch.draw(currentFrame, coin.getX(), coin.getY());
 		}
+		batch.draw(owlSprite, owl.getX(), owl.getY());
+		scoreText.draw(batch, score.toString(), 0, 0);
 		batch.end();
 
-		if(Gdx.input.isTouched() && inFlight == false) {
-			inFlight = true;
-		} else if (inFlight == true) {
-			owl.setX(owl.getX() + 2000 * Gdx.graphics.getDeltaTime());
-			if (owl.getX() >= nest.getX()) {
-				resetActors();
-				inFlight = false;
-			}
+		switch (owlState) {
+			case NOT_FLOWN:
+				if (Gdx.input.isTouched()) {
+					owlState = OwlState.FLYING;
+				}
+				break;
+			case FLYING:
+				owl.setX(owl.getX() + 1000 * Gdx.graphics.getDeltaTime());
+				if (owl.getX() >= nest.getX()) {
+					landTime = stateTime;
+					owlState = OwlState.LANDED;
+				}
+				break;
+			case LANDED:
+				if (landTime + OWL_LAND_DELAY <= stateTime) {
+					resetActors();
+				}
+				break;
+			default:
+				break;
 		}
 
 		if (coin != null && coin.overlaps(owl)) {
 			coinSound.play();
+			score += 1;
 			coin = null;
 		}
 
